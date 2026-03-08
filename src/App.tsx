@@ -75,7 +75,11 @@ export default function App() {
         if (text) {
           setChatHistory(prev => {
             const newHistory = [...prev];
-            newHistory[newHistory.length - 1].content += text;
+            const lastIndex = newHistory.length - 1;
+            newHistory[lastIndex] = {
+              ...newHistory[lastIndex],
+              content: newHistory[lastIndex].content + text
+            };
             return newHistory;
           });
         }
@@ -289,7 +293,7 @@ export default function App() {
                 width="100%" 
                 height={44} 
                 borderRadius={22} 
-                className={`transition-all cursor-pointer ${activePanel === item.id ? 'brightness-125 shadow-[0_0_15px_rgba(255,255,255,0.1)]' : ''}`}
+                className="transition-all cursor-pointer"
               >
                 <div className="flex items-center justify-center gap-2 text-white/90 font-medium text-sm">
                   <item.icon className="w-4 h-4" />
@@ -331,8 +335,8 @@ export default function App() {
           <div className="h-4 shrink-0" />
           
           {chatHistory.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-white/40 text-sm font-light">
-              准备好开始润色您的 Prompt 了吗？
+            <div className="flex-1 flex items-center justify-center text-white/30 text-2xl font-semibold blur-[0.5px] drop-shadow-lg" style={{ textShadow: '0 4px 24px rgba(255,255,255,0.2)' }}>
+              工        欲        善        其        事
             </div>
           ) : (
             chatHistory.map((msg, idx) => (
@@ -390,7 +394,7 @@ export default function App() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSendMessage();
               }}
-              placeholder="Type a message..."
+              placeholder="Type your idea..."
               className="flex-1 h-full bg-transparent border-none outline-none text-white placeholder:text-white/50 px-4 text-lg"
             />
             <button 
