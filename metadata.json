@@ -1,0 +1,5 @@
+{
+  "name": "Iridescence Background",
+  "description": "A WebGL-based iridescence background effect with adjustable options using ogl.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,408 @@
+import React, { useState, useRef, useEffect } from 'react';
+import Iridescence from './components/Iridescence';
+import GlassSurface from './components/GlassSurface';
+import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette } from 'lucide-react';
+import { createChatSession } from './services/geminiService';
+import { ModelType, MODEL_MODES } from './types';
+
+const modelsData = Object.keys(MODEL_MODES).map((key) => ({
+  id: key as ModelType,
+  name: key,
+  subOptions: MODEL_MODES[key as ModelType],
+}));
+
+const themes = [
+  { id: 'purple', name: '梦幻紫', color: [0.5, 0.5, 0.8] as [number, number, number] },
+  { id: 'rosegold', name: '玫瑰金', color: [0.9, 0.6, 0.5] as [number, number, number] },
+  { id: 'emerald', name: '翡翠绿', color: [0.3, 0.7, 0.5] as [number, number, number] },
+];
+
+export default function App() {
+  const [message, setMessage] = useState('');
+  const [activePanel, setActivePanel] = useState<string | null>(null);
+
+  // Chat State
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const chatSessionRef = useRef<any>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Settings State
+  const [apiKey, setApiKey] = useState('');
+  const [activeTheme, setActiveTheme] = useState(themes[0]);
+
+  // Parameters State
+  const [temperature, setTemperature] = useState(1.0);
+  const [detailLevel, setDetailLevel] = useState(3);
+  const [followUpIntensity, setFollowUpIntensity] = useState(3);
+
+  // Models State
+  const [selectedModel, setSelectedModel] = useState<ModelType>('ChatGPT');
+  const [selectedSubModel, setSelectedSubModel] = useState(MODEL_MODES['ChatGPT'][0]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [chatHistory]);
+
+  const handleSendMessage = async () => {
+    if (!message.trim() || isGenerating) return;
+
+    const userMsg = message;
+    setMessage('');
+    setChatHistory(prev => [...prev, { role: 'user', content: userMsg }]);
+    setIsGenerating(true);
+
+    try {
+      if (!chatSessionRef.current) {
+        chatSessionRef.current = createChatSession(
+          apiKey,
+          selectedModel,
+          selectedSubModel,
+          temperature,
+          followUpIntensity,
+          detailLevel
+        );
+      }
+
+      const response = await chatSessionRef.current.sendMessageStream({ message: userMsg });
+      
+      setChatHistory(prev => [...prev, { role: 'ai', content: '' }]);
+      
+      for await (const chunk of response) {
+        const text = chunk.text;
+        if (text) {
+          setChatHistory(prev => {
+            const newHistory = [...prev];
+            newHistory[newHistory.length - 1].content += text;
+            return newHistory;
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Chat error:', error);
+      setChatHistory(prev => [...prev, { role: 'ai', content: 'Error: ' + (error as Error).message }]);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleButtonClick = (panelId: string) => {
+    if (panelId === 'clear') {
+      setMessage('');
+      setChatHistory([]);
+      chatSessionRef.current = null;
+      return;
+    }
+    setActivePanel(activePanel === panelId ? null : panelId);
+  };
+
+  const handlePanelMouseLeave = () => {
+    setActivePanel(null);
+  };
+
+  const navItems = [
+    { id: 'settings', label: '设置', icon: Settings },
+    { id: 'model', label: '模型', icon: Box },
+    { id: 'parameters', label: '参数', icon: Sliders },
+    { id: 'clear', label: '清空', icon: Trash2 },
+  ];
+
+  const renderPanelContent = (panelId: string) => {
+    switch (panelId) {
+      case 'parameters':
+        return (
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-white/90">Temperature</label>
+                <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{temperature.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.01"
+                value={temperature}
+                onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-white/90">细节追究</label>
+                <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{detailLevel}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={detailLevel}
+                onChange={(e) => setDetailLevel(parseInt(e.target.value))}
+                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] text-white/40 px-1 font-mono">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-white/90">追问力度</label>
+                <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{followUpIntensity}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value={followUpIntensity}
+                onChange={(e) => setFollowUpIntensity(parseInt(e.target.value))}
+                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+              />
+              <div className="flex justify-between text-[10px] text-white/40 px-1 font-mono">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+              </div>
+            </div>
+          </div>
+        );
+      case 'model':
+        return (
+          <div className="space-y-2">
+            {modelsData.map((model) => (
+              <div key={model.id} className="flex flex-col gap-2">
+                <button
+                  onClick={() => setSelectedModel(model.id)}
+                  className={`flex items-center justify-between w-full px-3 py-2 rounded-lg transition-all ${
+                    selectedModel === model.id 
+                      ? 'bg-white/10 text-white shadow-sm' 
+                      : 'text-white/60 hover:bg-white/5 hover:text-white/90'
+                  }`}
+                >
+                  <span className="text-sm font-medium">{model.name}</span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${selectedModel === model.id ? 'rotate-90 text-white/80' : 'text-white/40'}`} />
+                </button>
+                
+                {/* Sub-options */}
+                <div 
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    selectedModel === model.id ? 'max-h-32 opacity-100 mb-2' : 'max-h-0 opacity-0'
+                  }`}
+                >
+                  <div className="flex flex-wrap gap-2 px-2 pt-1">
+                    {model.subOptions.map((sub) => (
+                      <button
+                        key={sub}
+                        onClick={() => setSelectedSubModel(sub)}
+                        className={`text-xs px-3 py-1.5 rounded-full transition-all border ${
+                          selectedModel === model.id && selectedSubModel === sub
+                            ? 'bg-white/20 border-white/30 text-white shadow-sm'
+                            : 'bg-transparent border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80 hover:border-white/20'
+                        }`}
+                      >
+                        {sub}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      case 'settings':
+        return (
+          <div className="space-y-6">
+            {/* API Key Input */}
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/90">
+                <Key className="w-4 h-4 text-white/60" />
+                Gemini API Key
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="输入您的 API Key..."
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Theme Selector */}
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/90">
+                <Palette className="w-4 h-4 text-white/60" />
+                背景配色
+              </label>
+              <div className="grid grid-cols-1 gap-2">
+                {themes.map((theme) => (
+                  <button
+                    key={theme.id}
+                    onClick={() => setActiveTheme(theme)}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all border ${
+                      activeTheme.id === theme.id
+                        ? 'bg-white/10 border-white/30 text-white shadow-sm'
+                        : 'bg-transparent border-transparent text-white/60 hover:bg-white/5 hover:text-white/90'
+                    }`}
+                  >
+                    <div 
+                      className="w-4 h-4 rounded-full shadow-inner border border-white/20"
+                      style={{ backgroundColor: `rgb(${theme.color[0]*255}, ${theme.color[1]*255}, ${theme.color[2]*255})` }}
+                    />
+                    <span className="text-sm">{theme.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="relative w-screen h-screen overflow-hidden bg-black text-white font-sans">
+      {/* Background Effect */}
+      <div className="absolute inset-0 z-0">
+        <Iridescence
+          color={activeTheme.color}
+          speed={0.8}
+          amplitude={0.1}
+          mouseReact={true}
+        />
+      </div>
+
+      {/* Top Navigation */}
+      <div className="absolute top-8 inset-x-0 z-20 w-full px-4 md:px-12 lg:px-24 flex justify-between items-start gap-4">
+        {navItems.map((item) => (
+          <div key={item.id} className="relative flex-1 flex flex-col">
+            <button 
+              onClick={() => handleButtonClick(item.id)}
+              className="w-full outline-none"
+            >
+              <GlassSurface 
+                width="100%" 
+                height={44} 
+                borderRadius={22} 
+                className={`transition-all cursor-pointer ${activePanel === item.id ? 'brightness-125 shadow-[0_0_15px_rgba(255,255,255,0.1)]' : ''}`}
+              >
+                <div className="flex items-center justify-center gap-2 text-white/90 font-medium text-sm">
+                  <item.icon className="w-4 h-4" />
+                  <span>{item.label}</span>
+                </div>
+              </GlassSurface>
+            </button>
+
+            {/* Dropdown Panel */}
+            {item.id !== 'clear' && (
+              <div 
+                className={`absolute top-full mt-4 w-72 bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-400 ease-out origin-top ${
+                  activePanel === item.id 
+                    ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
+                    : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                }`}
+                onMouseLeave={handlePanelMouseLeave}
+              >
+                <div className="p-5">
+                  <h3 className="text-base font-medium text-white/90 mb-5 flex items-center gap-2">
+                    <item.icon className="w-4 h-4 text-white/70" />
+                    {item.label}
+                  </h3>
+                  {renderPanelContent(item.id)}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Chat Area */}
+      <div className="absolute top-28 bottom-28 inset-x-0 w-full px-4 md:px-12 lg:px-24 z-10 pointer-events-none">
+        <div 
+          ref={scrollRef}
+          className="w-full h-full overflow-y-auto pb-4 flex flex-col gap-6 pointer-events-auto no-scrollbar"
+        >
+          {/* Invisible spacer to push content down initially if needed, or just padding */}
+          <div className="h-4 shrink-0" />
+          
+          {chatHistory.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-white/40 text-sm font-light">
+              准备好开始润色您的 Prompt 了吗？
+            </div>
+          ) : (
+            chatHistory.map((msg, idx) => (
+              <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className="max-w-[80%]">
+                  <GlassSurface
+                    width="auto"
+                    height="auto"
+                    borderRadius={24}
+                    className="p-5"
+                  >
+                    <div className="text-white/90 text-sm leading-relaxed whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
+                  </GlassSurface>
+                </div>
+              </div>
+            ))
+          )}
+          {isGenerating && chatHistory[chatHistory.length - 1]?.role === 'user' && (
+            <div className="flex w-full justify-start">
+              <div className="max-w-[80%]">
+                <GlassSurface
+                  width="auto"
+                  height="auto"
+                  borderRadius={24}
+                  className="p-5"
+                >
+                  <div className="text-white/60 text-sm flex items-center gap-2">
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-white/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </GlassSurface>
+              </div>
+            </div>
+          )}
+          <div className="h-4 shrink-0" />
+        </div>
+      </div>
+
+      {/* Chat Input */}
+      <div className="absolute bottom-8 inset-x-0 z-20 w-full px-4 md:px-12 lg:px-24">
+        <GlassSurface
+          width="100%"
+          height={64}
+          borderRadius={32}
+          className="shadow-2xl"
+        >
+          <div className="flex items-center w-full h-full px-2">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSendMessage();
+              }}
+              placeholder="Type a message..."
+              className="flex-1 h-full bg-transparent border-none outline-none text-white placeholder:text-white/50 px-4 text-lg"
+            />
+            <button 
+              onClick={handleSendMessage}
+              disabled={isGenerating || !message.trim()}
+              className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors text-white ${isGenerating || !message.trim() ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20'}`}
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
+        </GlassSurface>
+      </div>
+    </div>
+  );
+}
