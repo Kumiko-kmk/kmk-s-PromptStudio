@@ -135,7 +135,7 @@ ${getKnowledgeBase(model, mode, questionDepth)}
 `;
 
   return ai.chats.create({
-    model: ,
+    model: targetModel,
     config: {
       systemInstruction,
       temperature: temperature,
