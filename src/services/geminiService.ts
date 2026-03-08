@@ -98,7 +98,7 @@ export function createChatSession(
 ) {
   const actualApiKey = apiKey || process.env.GEMINI_API_KEY;
   const ai = new GoogleGenAI({ apiKey: actualApiKey });
-  const targetModel = apiKey ? 'gemini-2.5-flash' ： 'gemini-3-falsh-preview';
+  const targetModel = apiKey ? 'gemini-2.5-flash' : 'gemini-3-falsh-preview';
 
   const systemInstruction = `
 # Role
