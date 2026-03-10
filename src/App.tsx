@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Iridescence from './components/Iridescence';
 import GlassSurface from './components/GlassSurface';
-import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette } from 'lucide-react';
+import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette, Eye, EyeOff } from 'lucide-react';
 import { createChatSession } from './services/geminiService';
 import { ModelType, MODEL_MODES } from './types';
 
@@ -29,6 +29,9 @@ export default function App() {
 
   // Settings State
   const [apiKey, setApiKey] = useState('');
+  const [deepseekApiKey, setDeepseekApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showDeepseekApiKey, setShowDeepseekApiKey] = useState(false);
   const [activeTheme, setActiveTheme] = useState(themes[0]);
 
   // Parameters State
@@ -58,6 +61,7 @@ export default function App() {
       if (!chatSessionRef.current) {
         chatSessionRef.current = createChatSession(
           apiKey,
+          deepseekApiKey,
           selectedModel,
           selectedSubModel,
           temperature,
@@ -117,8 +121,8 @@ export default function App() {
     switch (panelId) {
       case 'parameters':
         return (
-          <div className="space-y-6">
-            <div className="space-y-3">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-medium text-white/90">Temperature</label>
                 <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{temperature.toFixed(2)}</span>
@@ -134,7 +138,7 @@ export default function App() {
               />
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-medium text-white/90">细节追究</label>
                 <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{detailLevel}</span>
@@ -153,7 +157,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <label className="text-sm font-medium text-white/90">追问力度</label>
                 <span className="text-xs text-white/60 font-mono bg-black/20 px-2 py-0.5 rounded">{followUpIntensity}</span>
@@ -227,12 +231,42 @@ export default function App() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showApiKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="输入您的 API Key..."
-                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
+                  placeholder="输入您的 Gemini API Key..."
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/90">
+                <Key className="w-4 h-4 text-white/60" />
+                DeepSeek API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showDeepseekApiKey ? "text" : "password"}
+                  value={deepseekApiKey}
+                  onChange={(e) => setDeepseekApiKey(e.target.value)}
+                  placeholder="输入您的 DeepSeek API Key..."
+                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDeepseekApiKey(!showDeepseekApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors"
+                >
+                  {showDeepseekApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -242,22 +276,22 @@ export default function App() {
                 <Palette className="w-4 h-4 text-white/60" />
                 背景配色
               </label>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="flex flex-row gap-2">
                 {themes.map((theme) => (
                   <button
                     key={theme.id}
                     onClick={() => setActiveTheme(theme)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all border ${
+                    className={`flex-1 flex items-center justify-center gap-2 px-2 py-2 rounded-lg transition-all border ${
                       activeTheme.id === theme.id
                         ? 'bg-white/10 border-white/30 text-white shadow-sm'
                         : 'bg-transparent border-transparent text-white/60 hover:bg-white/5 hover:text-white/90'
                     }`}
                   >
                     <div 
-                      className="w-4 h-4 rounded-full shadow-inner border border-white/20"
+                      className="w-3 h-3 rounded-full shadow-inner border border-white/20 shrink-0"
                       style={{ backgroundColor: `rgb(${theme.color[0]*255}, ${theme.color[1]*255}, ${theme.color[2]*255})` }}
                     />
-                    <span className="text-sm">{theme.name}</span>
+                    <span className="text-xs font-medium whitespace-nowrap">{theme.name}</span>
                   </button>
                 ))}
               </div>
@@ -282,47 +316,45 @@ export default function App() {
       </div>
 
       {/* Top Navigation */}
-      <div className="absolute top-8 inset-x-0 z-20 w-full px-4 md:px-12 lg:px-24 flex justify-between items-start gap-4">
-        {navItems.map((item) => (
-          <div key={item.id} className="relative flex-1 flex flex-col">
-            <button 
-              onClick={() => handleButtonClick(item.id)}
-              className="w-full outline-none"
-            >
-              <GlassSurface 
-                width="100%" 
-                height={44} 
-                borderRadius={22} 
-                className="transition-all cursor-pointer"
+      <div className="absolute top-8 inset-x-0 z-20 w-full px-4 md:px-12 lg:px-24">
+        <div className="relative flex justify-between items-start gap-4 w-full">
+          {navItems.map((item) => (
+            <div key={item.id} className="flex-1 flex flex-col">
+              <button 
+                onClick={() => handleButtonClick(item.id)}
+                className="w-full outline-none"
               >
-                <div className="flex items-center justify-center gap-2 text-white/90 font-medium text-sm">
-                  <item.icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </div>
-              </GlassSurface>
-            </button>
+                <GlassSurface 
+                  width="100%" 
+                  height={44} 
+                  borderRadius={22} 
+                  className="transition-all cursor-pointer"
+                >
+                  <div className="flex items-center justify-center gap-2 text-white/90 font-medium text-sm">
+                    <item.icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </div>
+                </GlassSurface>
+              </button>
 
-            {/* Dropdown Panel */}
-            {item.id !== 'clear' && (
-              <div 
-                className={`absolute top-full mt-4 w-72 bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-400 ease-out origin-top ${
-                  activePanel === item.id 
-                    ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
-                    : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
-                }`}
-                onMouseLeave={handlePanelMouseLeave}
-              >
-                <div className="p-5">
-                  <h3 className="text-base font-medium text-white/90 mb-5 flex items-center gap-2">
-                    <item.icon className="w-4 h-4 text-white/70" />
-                    {item.label}
-                  </h3>
-                  {renderPanelContent(item.id)}
+              {/* Dropdown Panel */}
+              {item.id !== 'clear' && (
+                <div 
+                  className={`absolute top-full left-0 mt-4 w-full bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-400 ease-out origin-top ${
+                    activePanel === item.id 
+                      ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
+                      : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                  }`}
+                  onMouseLeave={handlePanelMouseLeave}
+                >
+                  <div className="p-5">
+                    {renderPanelContent(item.id)}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Chat Area */}

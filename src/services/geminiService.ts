@@ -88,16 +88,83 @@ function getKnowledgeBase(model: string, mode: string, depth: number): string {
 `;
 }
 
+class DeepSeekChatSession {
+  private history: { role: string, content: string }[] = [];
+  private apiKey: string;
+  private temperature: number;
+
+  constructor(apiKey: string, systemInstruction: string, temperature: number) {
+    this.apiKey = apiKey;
+    this.temperature = temperature;
+    this.history.push({ role: 'system', content: systemInstruction });
+  }
+
+  async *sendMessageStream({ message }: { message: string }) {
+    this.history.push({ role: 'user', content: message });
+
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: this.history,
+        temperature: this.temperature,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`DeepSeek API error: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let aiMessage = '';
+
+    if (reader) {
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+          if (trimmedLine === 'data: [DONE]') return;
+          if (trimmedLine.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(trimmedLine.slice(6));
+              const text = data.choices[0]?.delta?.content || '';
+              if (text) {
+                aiMessage += text;
+                yield { text };
+              }
+            } catch (e) {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    }
+    this.history.push({ role: 'assistant', content: aiMessage });
+  }
+}
+
 export function createChatSession(
   apiKey: string,
+  deepseekApiKey: string,
   model: string, 
   mode: string, 
   temperature: number, 
   intensity: number, 
   questionDepth: number = 3 // 新增：问题深度，范围1-5
 ) {
-  const actualApiKey = apiKey || process.env.GEMINI_API_KEY;
-  const ai = new GoogleGenAI({ apiKey: actualApiKey });
+  const actualGeminiKey = apiKey || process.env.GEMINI_API_KEY;
   const targetModel = apiKey ? 'gemini-2.5-flash' : 'gemini-3.1-flash-lite-preview';
 
   const systemInstruction = `
@@ -134,11 +201,19 @@ ${getKnowledgeBase(model, mode, questionDepth)}
 ---
 `;
 
-  return ai.chats.create({
-    model: targetModel,
-    config: {
-      systemInstruction,
-      temperature: temperature,
-    },
-  });
+  // 如果用户输入了 Gemini Key，或者没有输入 DeepSeek Key 但环境变量中有 Gemini Key，则使用 Gemini
+  if (apiKey || (!deepseekApiKey && actualGeminiKey)) {
+    const ai = new GoogleGenAI({ apiKey: actualGeminiKey! });
+    return ai.chats.create({
+      model: targetModel,
+      config: {
+        systemInstruction,
+        temperature: temperature,
+      },
+    });
+  } else if (deepseekApiKey) {
+    return new DeepSeekChatSession(deepseekApiKey, systemInstruction, temperature);
+  } else {
+    throw new Error("请在设置中提供 Gemini 或 DeepSeek 的 API Key");
+  }
 }
