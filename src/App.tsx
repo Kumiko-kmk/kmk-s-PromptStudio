@@ -4,12 +4,44 @@ import GlassSurface from './components/GlassSurface';
 import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette, Eye, EyeOff } from 'lucide-react';
 import { createChatSession } from './services/geminiService';
 import { ModelType, MODEL_MODES } from './types';
+import { InfiniteMenu, InfiniteMenuItem } from './components/InfiniteMenu';
+import manusImg from './manus.png';
+import grokImg from './gork.png';
+import geminiImg from './gemini.jpg';
+import gptImg from './gpt.png';
 
 const modelsData = Object.keys(MODEL_MODES).map((key) => ({
   id: key as ModelType,
   name: key,
   subOptions: MODEL_MODES[key as ModelType],
 }));
+
+const infiniteMenuItems: InfiniteMenuItem[] = [
+  {
+    id: 'ChatGPT',
+    label: 'ChatGPT',
+    image: gptImg,
+    subOptions: MODEL_MODES['ChatGPT'],
+  },
+  {
+    id: 'Gemini',
+    label: 'Gemini',
+    image: geminiImg,
+    subOptions: MODEL_MODES['Gemini'],
+  },
+  {
+    id: 'Grok',
+    label: 'Grok',
+    image: grokImg,
+    subOptions: MODEL_MODES['Grok'],
+  },
+  {
+    id: 'Manus',
+    label: 'Manus',
+    image: manusImg,
+    subOptions: MODEL_MODES['Manus'],
+  },
+];
 
 const themes = [
   { id: 'purple', name: '梦幻紫', color: [0.5, 0.5, 0.8] as [number, number, number] },
@@ -182,45 +214,27 @@ export default function App() {
         );
       case 'model':
         return (
-          <div className="space-y-2">
-            {modelsData.map((model) => (
-              <div key={model.id} className="flex flex-col gap-2">
-                <button
-                  onClick={() => setSelectedModel(model.id)}
-                  className={`flex items-center justify-between w-full px-3 py-2 rounded-lg transition-all ${
-                    selectedModel === model.id 
-                      ? 'bg-white/10 text-white shadow-sm' 
-                      : 'text-white/60 hover:bg-white/5 hover:text-white/90'
-                  }`}
-                >
-                  <span className="text-sm font-medium">{model.name}</span>
-                  <ChevronRight className={`w-4 h-4 transition-transform ${selectedModel === model.id ? 'rotate-90 text-white/80' : 'text-white/40'}`} />
-                </button>
-                
-                {/* Sub-options */}
-                <div 
-                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    selectedModel === model.id ? 'max-h-32 opacity-100 mb-2' : 'max-h-0 opacity-0'
-                  }`}
-                >
-                  <div className="flex flex-wrap gap-2 px-2 pt-1">
-                    {model.subOptions.map((sub) => (
-                      <button
-                        key={sub}
-                        onClick={() => setSelectedSubModel(sub)}
-                        className={`text-xs px-3 py-1.5 rounded-full transition-all border ${
-                          selectedModel === model.id && selectedSubModel === sub
-                            ? 'bg-white/20 border-white/30 text-white shadow-sm'
-                            : 'bg-transparent border-white/10 text-white/50 hover:bg-white/10 hover:text-white/80 hover:border-white/20'
-                        }`}
-                      >
-                        {sub}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          <div className="w-full h-[320px] relative">
+            <InfiniteMenu 
+              items={infiniteMenuItems}
+              onSelect={(item, subOption) => {
+                setSelectedModel(item.id as ModelType);
+                if (subOption) {
+                  setSelectedSubModel(subOption);
+                }
+              }}
+            />
+            {/* Display current selection */}
+            <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center pointer-events-none">
+              <div className="bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-sm">
+                <span className="text-xs text-white/60">当前模型:</span>
+                <span className="text-sm font-medium text-white">{selectedModel}</span>
               </div>
-            ))}
+              <div className="bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-sm">
+                <span className="text-xs text-white/60">当前模式:</span>
+                <span className="text-sm font-medium text-emerald-400">{selectedSubModel}</span>
+              </div>
+            </div>
           </div>
         );
       case 'settings':
@@ -343,14 +357,14 @@ export default function App() {
               {/* Dropdown Panel */}
               {item.id !== 'clear' && (
                 <div 
-                  className={`absolute top-full left-0 mt-4 w-full bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl transition-all duration-400 ease-out origin-top ${
+                  className={`absolute top-full left-0 mt-4 w-full bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden transition-all duration-400 ease-out origin-top ${
                     activePanel === item.id 
                       ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
                       : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
                   }`}
                   onMouseLeave={handlePanelMouseLeave}
                 >
-                  <div className="p-5">
+                  <div className={item.id === 'model' ? "p-0" : "p-5"}>
                     {renderPanelContent(item.id)}
                   </div>
                 </div>
