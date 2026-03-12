@@ -13,8 +13,11 @@ const modelsData = Object.keys(MODEL_MODES).map((key) => ({
 
 const themes = [
   { id: 'purple', name: '梦幻紫', color: [0.5, 0.5, 0.8] as [number, number, number] },
-  { id: 'rosegold', name: '玫瑰金', color: [0.9, 0.6, 0.5] as [number, number, number] },
-  { id: 'emerald', name: '翡翠绿', color: [0.3, 0.7, 0.5] as [number, number, number] },
+  { id:'teal',   name:'碧海青',  color:[0.18,0.72,0.72] as [number, number, number] },
+ { id:'coral',  name:'珊瑚橙',  color:[1.0,0.48,0.35] as [number, number, number] },
+ { id:'jade',   name:'翡翠绿',  color:[0.18,0.80,0.44] as [number, number, number] },
+ { id:'amber',  name:'琥珀黄',  color:[1.0,0.78,0.34] as [number, number, number] },
+ { id:'indigo', name:'深靛蓝',  color:[0.23,0.24,0.76] as [number, number, number] },
 ];
 
 export default function App() {
