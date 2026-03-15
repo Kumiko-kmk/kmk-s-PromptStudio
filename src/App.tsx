@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Iridescence from './components/Iridescence';
 import GlassSurface from './components/GlassSurface';
-import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette, Eye, EyeOff } from 'lucide-react';
+import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette, Eye, EyeOff, Copy, Check } from 'lucide-react';
 import { createChatSession } from './services/geminiService';
 import { ModelType, MODEL_MODES } from './types';
 import { InfiniteMenu, InfiniteMenuItem } from './components/InfiniteMenu';
@@ -55,12 +55,14 @@ const themes = [
 export default function App() {
   const [message, setMessage] = useState('');
   const [activePanel, setActivePanel] = useState<string | null>(null);
+  const [copiedIndices, setCopiedIndices] = useState<number[]>([]);
 
   // Chat State
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
+  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'ai', content: string, ui?: any, selectedOptionId?: string, silent?: boolean }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const chatSessionRef = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   // Settings State
   const [apiKey, setApiKey] = useState('');
@@ -78,18 +80,75 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<ModelType>('ChatGPT');
   const [selectedSubModel, setSelectedSubModel] = useState(MODEL_MODES['ChatGPT'][0]);
 
-  useEffect(() => {
+  const handleScroll = () => {
     if (scrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+      // If the user is within 50px of the bottom, we consider them at the bottom
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      shouldAutoScrollRef.current = isAtBottom;
+    }
+  };
+
+  const cleanContent = (text: string) => {
+    let optionsText = '';
+    
+    // Extract options from UI_META if present
+    const uiMetaMatch = text.match(/\[UI_META\]([\s\S]*?)(\[\/UI_META\]|$)/i);
+    if (uiMetaMatch) {
+      const block = uiMetaMatch[1];
+      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+      const isOptions = lines.some(l => l.startsWith('type=options'));
+      
+      if (isOptions) {
+        const options = lines
+          .filter(l => l.startsWith('option='))
+          .map(l => {
+            const payload = l.slice(7);
+            const parts = payload.split('|');
+            let id = '', label = '', reply = '';
+            parts.forEach(p => {
+              if (p.startsWith('id:')) id = p.slice(3);
+              else if (p.startsWith('label:')) label = p.slice(6);
+              else if (p.startsWith('reply:')) reply = p.slice(6);
+            });
+            return { id, label, reply };
+          })
+          .filter(opt => opt.id && opt.label);
+          
+        if (options.length > 0) {
+          optionsText = '\n\n' + options.map((opt, index) => {
+            const displayId = String.fromCharCode(65 + index); // A, B, C...
+            return `【选项 ${displayId}】 ${opt.label}\n${opt.reply}`;
+          }).join('\n\n');
+        }
+      }
+    }
+
+    const cleaned = text
+      .replace(/\[UI_META\][\s\S]*?(\[\/UI_META\]|$)/gi, '')
+      .replace(/\[FINAL_PROMPT\][\s\S]*?(\[\/FINAL_PROMPT\]|$)/gi, '')
+      .replace(/\[STATUS:\s*READY_TO_GENERATE\]/gi, '')
+      .trim();
+      
+    return cleaned + optionsText;
+  };
+
+  useEffect(() => {
+    if (scrollRef.current && shouldAutoScrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [chatHistory]);
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || isGenerating) return;
+  const handleSendMessage = async (customMessage?: string | any, silent = false, source?: string, selection?: any) => {
+    const msgText = typeof customMessage === 'string' ? customMessage : message;
+    if (!msgText || typeof msgText !== 'string' || !msgText.trim() || isGenerating) return;
 
-    const userMsg = message;
     setMessage('');
-    setChatHistory(prev => [...prev, { role: 'user', content: userMsg }]);
+    
+    // Force auto-scroll when user sends a message
+    shouldAutoScrollRef.current = true;
+    
+    setChatHistory(prev => [...prev, { role: 'user', content: msgText, silent }]);
     setIsGenerating(true);
 
     try {
@@ -105,19 +164,40 @@ export default function App() {
         );
       }
 
-      const response = await chatSessionRef.current.sendMessageStream({ message: userMsg });
+      const response = await chatSessionRef.current.sendMessageStream({ 
+        message: msgText,
+        silent,
+        source,
+        selection
+      });
       
       setChatHistory(prev => [...prev, { role: 'ai', content: '' }]);
       
       for await (const chunk of response) {
-        const text = chunk.text;
-        if (text) {
+        if (!chatSessionRef.current) break;
+
+        if (chunk.text) {
           setChatHistory(prev => {
+            if (prev.length === 0) return prev;
             const newHistory = [...prev];
             const lastIndex = newHistory.length - 1;
+            if (newHistory[lastIndex].role !== 'ai') return prev;
             newHistory[lastIndex] = {
               ...newHistory[lastIndex],
-              content: newHistory[lastIndex].content + text
+              content: newHistory[lastIndex].content + chunk.text
+            };
+            return newHistory;
+          });
+        }
+        if (chunk.ui) {
+          setChatHistory(prev => {
+            if (prev.length === 0) return prev;
+            const newHistory = [...prev];
+            const lastIndex = newHistory.length - 1;
+            if (newHistory[lastIndex].role !== 'ai') return prev;
+            newHistory[lastIndex] = {
+              ...newHistory[lastIndex],
+              ui: { ...newHistory[lastIndex].ui, ...chunk.ui }
             };
             return newHistory;
           });
@@ -125,7 +205,9 @@ export default function App() {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setChatHistory(prev => [...prev, { role: 'ai', content: 'Error: ' + (error as Error).message }]);
+      if (chatSessionRef.current) {
+        setChatHistory(prev => [...prev, { role: 'ai', content: 'Error: ' + (error as Error).message }]);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -136,7 +218,11 @@ export default function App() {
       setMessage('');
       setChatHistory([]);
       chatSessionRef.current = null;
+      setActivePanel(null);
       return;
+    }
+    if (chatHistory.length > 0) {
+      return; // Do not allow opening settings/model/params if chat has started
     }
     setActivePanel(activePanel === panelId ? null : panelId);
   };
@@ -335,17 +421,20 @@ export default function App() {
       {/* Top Navigation */}
       <div className="absolute top-8 inset-x-0 z-20 w-full px-4 md:px-12 lg:px-24">
         <div className="relative flex justify-between items-start gap-4 w-full">
-          {navItems.map((item) => (
+          {navItems.map((item) => {
+            const isDisabled = chatHistory.length > 0 && item.id !== 'clear';
+            return (
             <div key={item.id} className="flex-1 flex flex-col">
               <button 
                 onClick={() => handleButtonClick(item.id)}
-                className="w-full outline-none"
+                className={`w-full outline-none transition-opacity duration-300 ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                disabled={isDisabled}
               >
                 <GlassSurface 
                   width="100%" 
                   height={44} 
                   borderRadius={22} 
-                  className="transition-all cursor-pointer"
+                  className={`transition-all ${isDisabled ? '' : 'cursor-pointer hover:bg-white/5'}`}
                 >
                   <div className="flex items-center justify-center gap-2 text-white/90 font-medium text-sm">
                     <item.icon className="w-4 h-4" />
@@ -370,7 +459,8 @@ export default function App() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -378,6 +468,7 @@ export default function App() {
       <div className="absolute top-28 bottom-28 inset-x-0 w-full px-4 md:px-12 lg:px-24 z-10 pointer-events-none">
         <div 
           ref={scrollRef}
+          onScroll={handleScroll}
           className="w-full h-full overflow-y-auto pb-4 flex flex-col gap-6 pointer-events-auto no-scrollbar"
         >
           {/* Invisible spacer to push content down initially if needed, or just padding */}
@@ -388,22 +479,93 @@ export default function App() {
               工        欲        善        其        事
             </div>
           ) : (
-            chatHistory.map((msg, idx) => (
-              <div key={idx} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className="max-w-[80%]">
+            chatHistory.map((msg, idx) => {
+              if (msg.silent) return null;
+              
+              return (
+              <div key={idx} className={`flex w-full flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className="max-w-[80%] flex flex-col gap-2 items-stretch">
                   <GlassSurface
-                    width="auto"
+                    width="100%"
                     height="auto"
                     borderRadius={24}
-                    className="p-5"
+                    className="p-5 relative group"
                   >
-                    <div className="text-white/90 text-sm leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </div>
+                    {(() => {
+                      const contentText = cleanContent(msg.content);
+                      const shouldAppendFinalPrompt = msg.ui?.finalPrompt && !contentText.includes(msg.ui.finalPrompt.trim());
+                      
+                      return (
+                        <>
+                          <div className={`text-white/90 text-sm leading-relaxed whitespace-pre-wrap ${msg.ui?.finalPrompt ? 'pb-8' : ''}`}>
+                            {contentText}
+                            {shouldAppendFinalPrompt && (
+                              <>
+                                {contentText.trim() ? '\n\n' : ''}
+                                {msg.ui.finalPrompt}
+                              </>
+                            )}
+                          </div>
+                          {msg.role === 'ai' && msg.ui?.finalPrompt && (
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(msg.ui!.finalPrompt!);
+                                setCopiedIndices(prev => prev.includes(idx) ? prev : [...prev, idx]);
+                              }}
+                              className="absolute bottom-3 right-3 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/50 hover:text-white transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            >
+                              {copiedIndices.includes(idx) ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </GlassSurface>
+
+                {/* Render options if they exist and it's an AI message */}
+                {msg.role === 'ai' && msg.ui?.options && msg.ui.options.length > 0 && (
+                  <div className="flex flex-row gap-2 w-full">
+                    {msg.ui.options.map((opt: any) => {
+                      const isSelected = msg.selectedOptionId === opt.id;
+                      const hasSelection = !!msg.selectedOptionId;
+                      
+                      return (
+                        <button
+                          key={opt.id}
+                          disabled={hasSelection || isGenerating}
+                          onClick={() => {
+                            // Mark this option as selected
+                            setChatHistory(prev => {
+                              const newHistory = [...prev];
+                              newHistory[idx] = { ...newHistory[idx], selectedOptionId: opt.id };
+                              return newHistory;
+                            });
+                            // Send the reply silently
+                            handleSendMessage(opt.reply, true, 'option_button', { id: opt.id, label: opt.label });
+                          }}
+                          className={`flex-1 text-center transition-all duration-300 ${hasSelection && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
+                        >
+                          <GlassSurface
+                            width="100%"
+                            height="auto"
+                            borderRadius={16}
+                            className={`py-2.5 px-4 transition-colors duration-300 flex items-center justify-center ${isSelected ? 'bg-white/20 border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.15)]' : 'hover:bg-white/10'}`}
+                          >
+                            <span className={`
+                              font-bold text-sm transition-colors
+                              ${isSelected ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-white/80'}
+                            `}>
+                              {isSelected ? '✓' : opt.id}
+                            </span>
+                          </GlassSurface>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 </div>
               </div>
-            ))
+            )})
           )}
           {isGenerating && chatHistory[chatHistory.length - 1]?.role === 'user' && (
             <div className="flex w-full justify-start">
@@ -447,7 +609,7 @@ export default function App() {
               className="flex-1 h-full bg-transparent border-none outline-none text-white placeholder:text-white/50 px-4 text-lg"
             />
             <button 
-              onClick={handleSendMessage}
+              onClick={() => handleSendMessage()}
               disabled={isGenerating || !message.trim()}
               className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors text-white ${isGenerating || !message.trim() ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20'}`}
             >

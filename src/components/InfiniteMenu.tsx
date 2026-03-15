@@ -160,7 +160,7 @@ export const InfiniteMenu: React.FC<InfiniteMenuProps> = ({
   items,
   onSelect,
   itemRadius = 40,
-  gap = 24,
+  gap = 12,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
