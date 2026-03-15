@@ -126,7 +126,7 @@ export default function App() {
 
     const cleaned = text
       .replace(/\[UI_META\][\s\S]*?(\[\/UI_META\]|$)/gi, '')
-      .replace(/\[FINAL_PROMPT\][\s\S]*?(\[\/FINAL_PROMPT\]|$)/gi, '')
+      .replace(/\[\/?FINAL_PROMPT\]/gi, '')
       .replace(/\[STATUS:\s*READY_TO_GENERATE\]/gi, '')
       .trim();
       
@@ -217,6 +217,7 @@ export default function App() {
     if (panelId === 'clear') {
       setMessage('');
       setChatHistory([]);
+      setCopiedIndices([]);
       chatSessionRef.current = null;
       setActivePanel(null);
       return;
