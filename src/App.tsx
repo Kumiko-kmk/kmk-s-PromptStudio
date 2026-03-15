@@ -90,47 +90,11 @@ export default function App() {
   };
 
   const cleanContent = (text: string) => {
-    let optionsText = '';
-    
-    // Extract options from UI_META if present
-    const uiMetaMatch = text.match(/\[UI_META\]([\s\S]*?)(\[\/UI_META\]|$)/i);
-    if (uiMetaMatch) {
-      const block = uiMetaMatch[1];
-      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-      const isOptions = lines.some(l => l.startsWith('type=options'));
-      
-      if (isOptions) {
-        const options = lines
-          .filter(l => l.startsWith('option='))
-          .map(l => {
-            const payload = l.slice(7);
-            const parts = payload.split('|');
-            let id = '', label = '', reply = '';
-            parts.forEach(p => {
-              if (p.startsWith('id:')) id = p.slice(3);
-              else if (p.startsWith('label:')) label = p.slice(6);
-              else if (p.startsWith('reply:')) reply = p.slice(6);
-            });
-            return { id, label, reply };
-          })
-          .filter(opt => opt.id && opt.label);
-          
-        if (options.length > 0) {
-          optionsText = '\n\n' + options.map((opt, index) => {
-            const displayId = String.fromCharCode(65 + index); // A, B, C...
-            return `【选项 ${displayId}】 ${opt.label}\n${opt.reply}`;
-          }).join('\n\n');
-        }
-      }
-    }
-
-    const cleaned = text
+    return text
       .replace(/\[UI_META\][\s\S]*?(\[\/UI_META\]|$)/gi, '')
       .replace(/\[\/?FINAL_PROMPT\]/gi, '')
       .replace(/\[STATUS:\s*READY_TO_GENERATE\]/gi, '')
       .trim();
-      
-    return cleaned + optionsText;
   };
 
   useEffect(() => {
@@ -525,7 +489,7 @@ export default function App() {
 
                 {/* Render options if they exist and it's an AI message */}
                 {msg.role === 'ai' && msg.ui?.options && msg.ui.options.length > 0 && (
-                  <div className="flex flex-row gap-2 w-full">
+                  <div className="flex flex-col gap-2 w-full mt-1">
                     {msg.ui.options.map((opt: any) => {
                       const isSelected = msg.selectedOptionId === opt.id;
                       const hasSelection = !!msg.selectedOptionId;
@@ -544,19 +508,19 @@ export default function App() {
                             // Send the reply silently
                             handleSendMessage(opt.reply, true, 'option_button', { id: opt.id, label: opt.label });
                           }}
-                          className={`flex-1 text-center transition-all duration-300 ${hasSelection && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
+                          className={`w-full text-left transition-all duration-300 ${hasSelection && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.01]'}`}
                         >
                           <GlassSurface
                             width="100%"
                             height="auto"
                             borderRadius={16}
-                            className={`py-2.5 px-4 transition-colors duration-300 flex items-center justify-center ${isSelected ? 'bg-white/20 border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.15)]' : 'hover:bg-white/10'}`}
+                            className={`py-3 px-5 transition-colors duration-300 flex items-center justify-start ${isSelected ? 'bg-white/20 border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.15)]' : 'hover:bg-white/10'}`}
                           >
                             <span className={`
-                              font-bold text-sm transition-colors
+                              font-medium text-sm transition-colors leading-relaxed
                               ${isSelected ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-white/80'}
                             `}>
-                              {isSelected ? '✓' : opt.id}
+                              {isSelected ? '✓ ' : ''}{opt.label}
                             </span>
                           </GlassSurface>
                         </button>
