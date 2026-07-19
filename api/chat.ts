@@ -1,10 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
-import { MODEL_MODES, ModelType } from '../src/types';
+import { MODEL_MODES, ModelType } from '../src/types.js';
 import {
   extractUiPayload,
   preparePromptRequest,
   PromptMessage,
-} from '../src/services/geminiService';
+} from '../src/services/geminiService.js';
 
 export const config = {
   maxDuration: 60,
