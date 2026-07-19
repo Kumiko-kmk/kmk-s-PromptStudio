@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { MODEL_MODES, ModelType } from '../src/types.js';
 import {
   extractUiPayload,
@@ -185,24 +185,21 @@ async function requestGeminiAssessment(apiKey: string, request: ChatRequest): Pr
       temperature: 0,
       maxOutputTokens: 300,
       responseMimeType: 'application/json',
-      responseJsonSchema: {
-        type: 'object',
-        additionalProperties: false,
+      responseSchema: {
+        type: Type.OBJECT,
         required: ['dimensions', 'criticalMissing'],
         properties: {
           dimensions: {
-            type: 'object',
-            additionalProperties: false,
+            type: Type.OBJECT,
             required: [...INFORMATION_DIMENSIONS],
             properties: Object.fromEntries(INFORMATION_DIMENSIONS.map((dimension) => [
               dimension,
-              { type: 'boolean' },
+              { type: Type.BOOLEAN },
             ])),
           },
           criticalMissing: {
-            type: 'array',
-            items: { type: 'string', enum: [...INFORMATION_DIMENSIONS] },
-            maxItems: INFORMATION_DIMENSIONS.length,
+            type: Type.ARRAY,
+            items: { type: Type.STRING, enum: [...INFORMATION_DIMENSIONS] },
           },
         },
       },
