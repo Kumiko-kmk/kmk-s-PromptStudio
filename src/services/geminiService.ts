@@ -1,6 +1,3 @@
-// @ts-ignore - runtime dependency is provided by host app environment
-import { GoogleGenAI } from '@google/genai';
-
 /**
  * =============================================================================
  * 01) 启发式追问策略生成（按问题深度动态切换）
@@ -645,7 +642,7 @@ type UiOption = {
   reply: string;
 };
 
-type UiPayload = {
+export type UiPayload = {
   options?: UiOption[];
   finalPrompt?: string;
   readyToGenerate?: boolean;
@@ -677,7 +674,7 @@ function parseKeyValuePairs(segment: string): Record<string, string> {
   return result;
 }
 
-function extractUiPayload(rawText: string): { cleanedText: string; ui: UiPayload } {
+export function extractUiPayload(rawText: string): { cleanedText: string; ui: UiPayload } {
   const ui: UiPayload = {};
   let cleanedText = rawText;
 
@@ -932,41 +929,35 @@ class DeepSeekChatSession {
 
 /**
  * =============================================================================
- * 04) 对外入口：创建聊天会话（Gemini 优先，DeepSeek 兜底）
+ * 04) 服务端 Prompt 请求准备
  * -----------------------------------------------------------------------------
- * 执行顺序：
- * 1. 解析可用的 Gemini Key（优先入参，其次环境变量）
- * 2. 选择 Gemini 目标模型版本
- * 3. 组装 systemInstruction（角色 + 动态策略 + 输出约束）
- * 4. 按 key 情况路由到 Gemini 或 DeepSeek
+ * 作用：
+ * - 根据完整对话历史恢复轮次状态，并生成本轮控制指令。
+ * - 组装仅在 Vercel Function 中使用的 systemInstruction。
  *
- * 兼容约束：
- * - 不改变函数签名，保持既有调用方可直接复用。
- * - 返回对象保持与原实现一致（Gemini chat session / DeepSeek session）。
+ * 安全约束：
+ * - 本模块不读取或接收 API Key；供应商凭据仅由 api/chat.ts 读取。
  * =============================================================================
  */
-export function createChatSession(
-  apiKey: string,
-  deepseekApiKey: string,
-  model: string, 
-  mode: string, 
-  temperature: number, 
-  intensity: number, 
-  questionDepth: number = 3 // 问题深度，范围1-5
-) {
-  const normalizedTemperature = normalizeTemperature(temperature);
+export type PromptMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type PreparedPromptRequest = {
+  systemInstruction: string;
+  controlInstruction: string;
+  temperature: number;
+};
+
+function buildSystemInstruction(
+  model: string,
+  mode: string,
+  intensity: number,
+  questionDepth: number,
+): string {
   const finalPromptTemplate = getFinalPromptTemplateByMode(mode);
-
-  // Step 1) 统一解析 Gemini Key 来源（入参优先，环境变量兜底）
-  const rawGeminiKey = apiKey || (globalThis as { process?: { env?: { GEMINI_API_KEY?: string } } }).process?.env?.GEMINI_API_KEY;
-  const actualGeminiKey = rawGeminiKey ? rawGeminiKey.trim().replace(/[^\x00-\x7F]/g, "") : undefined;
-  const actualDeepseekKey = deepseekApiKey ? deepseekApiKey.trim().replace(/[^\x00-\x7F]/g, "") : undefined;
-
-  // Step 2) Gemini 模型选择策略（显式传入 key 时使用更高版本）
-  const targetModel = actualGeminiKey ? 'gemini-2.5-flash' : 'gemini-2.0-flash';
-
-  // Step 3) 组装系统提示词：角色、上下文策略、交互流程、输出格式
-  const systemInstruction = `
+  return `
 # Role
 你是一个顶级的“Prompt架构师”。你的任务是通过启发式对话，深度挖掘用户的独特需求，并最终生成完美适配 ${model} 的高质量指令。
 
@@ -1012,35 +1003,36 @@ ${getIntensityGuidance(intensity)}
 
 ${finalPromptTemplate}
 `;
+}
 
-  // Step 4) 路由与模型调用逻辑（Gemini 优先，DeepSeek 作为备选）
-  if (apiKey && actualGeminiKey) {
-    // 用户显式提供了 Gemini Key，优先使用
-    const ai = new GoogleGenAI({ apiKey: actualGeminiKey });
-    const chat = ai.chats.create({
-      model: targetModel,
-      config: {
-        systemInstruction,
-        temperature: normalizedTemperature,
-      },
-    });
-    return createControlledSessionProxy(chat, intensity);
-  } else if (actualDeepseekKey) {
-    // 用户显式提供了 DeepSeek Key
-    const deepSeekSession = new DeepSeekChatSession(actualDeepseekKey, systemInstruction, normalizedTemperature);
-    return createControlledSessionProxy(deepSeekSession, intensity);
-  } else if (actualGeminiKey) {
-    // 环境变量中存在 Gemini Key，作为兜底
-    const ai = new GoogleGenAI({ apiKey: actualGeminiKey });
-    const chat = ai.chats.create({
-      model: targetModel,
-      config: {
-        systemInstruction,
-        temperature: normalizedTemperature,
-      },
-    });
-    return createControlledSessionProxy(chat, intensity);
-  } else {
-    throw new Error("请在设置中提供 Gemini 或 DeepSeek 的 API Key");
-  }
+export function preparePromptRequest(
+  messages: PromptMessage[],
+  model: string,
+  mode: string,
+  temperature: number,
+  intensity: number,
+  questionDepth: number,
+): PreparedPromptRequest {
+  const userMessages = messages
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content);
+  const askedRounds = messages
+    .slice(0, -1)
+    .filter((message) => message.role === 'assistant' && !/\[STATUS:\s*READY_TO_GENERATE\]/i.test(message.content))
+    .length;
+  const readiness = evaluateInformationSufficiency(userMessages);
+  const range = getRoundRangeByIntensity(intensity);
+  const decision = decideRoundAction(askedRounds, range.min, range.max, readiness);
+
+  return {
+    systemInstruction: buildSystemInstruction(model, mode, intensity, questionDepth),
+    controlInstruction: buildRoundControlInstruction(
+      decision,
+      askedRounds,
+      range.min,
+      range.max,
+      readiness,
+    ),
+    temperature: normalizeTemperature(temperature),
+  };
 }
