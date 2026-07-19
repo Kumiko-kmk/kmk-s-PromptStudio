@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Iridescence from './components/Iridescence';
 import GlassSurface from './components/GlassSurface';
-import { Send, Settings, Box, Sliders, Trash2, ChevronRight, Key, Palette, Eye, EyeOff, Copy, Check } from 'lucide-react';
-import { createChatSession } from './services/geminiService';
+import { Send, Settings, Box, Sliders, Trash2, Palette, Copy, Check } from 'lucide-react';
+import { createChatSession } from './services/chatService';
 import { ModelType, MODEL_MODES } from './types';
 import { InfiniteMenu, InfiniteMenuItem } from './components/InfiniteMenu';
 import manusImg from './manus.png';
@@ -65,10 +65,6 @@ export default function App() {
   const shouldAutoScrollRef = useRef(true);
 
   // Settings State
-  const [apiKey, setApiKey] = useState('');
-  const [deepseekApiKey, setDeepseekApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [showDeepseekApiKey, setShowDeepseekApiKey] = useState(false);
   const [activeTheme, setActiveTheme] = useState(themes[0]);
 
   // Parameters State
@@ -90,47 +86,11 @@ export default function App() {
   };
 
   const cleanContent = (text: string) => {
-    let optionsText = '';
-    
-    // Extract options from UI_META if present
-    const uiMetaMatch = text.match(/\[UI_META\]([\s\S]*?)(\[\/UI_META\]|$)/i);
-    if (uiMetaMatch) {
-      const block = uiMetaMatch[1];
-      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
-      const isOptions = lines.some(l => l.startsWith('type=options'));
-      
-      if (isOptions) {
-        const options = lines
-          .filter(l => l.startsWith('option='))
-          .map(l => {
-            const payload = l.slice(7);
-            const parts = payload.split('|');
-            let id = '', label = '', reply = '';
-            parts.forEach(p => {
-              if (p.startsWith('id:')) id = p.slice(3);
-              else if (p.startsWith('label:')) label = p.slice(6);
-              else if (p.startsWith('reply:')) reply = p.slice(6);
-            });
-            return { id, label, reply };
-          })
-          .filter(opt => opt.id && opt.label);
-          
-        if (options.length > 0) {
-          optionsText = '\n\n' + options.map((opt, index) => {
-            const displayId = String.fromCharCode(65 + index); // A, B, C...
-            return `【选项 ${displayId}】 ${opt.label}\n${opt.reply}`;
-          }).join('\n\n');
-        }
-      }
-    }
-
-    const cleaned = text
+    return text
       .replace(/\[UI_META\][\s\S]*?(\[\/UI_META\]|$)/gi, '')
       .replace(/\[\/?FINAL_PROMPT\]/gi, '')
       .replace(/\[STATUS:\s*READY_TO_GENERATE\]/gi, '')
       .trim();
-      
-    return cleaned + optionsText;
   };
 
   useEffect(() => {
@@ -154,8 +114,6 @@ export default function App() {
     try {
       if (!chatSessionRef.current) {
         chatSessionRef.current = createChatSession(
-          apiKey,
-          deepseekApiKey,
           selectedModel,
           selectedSubModel,
           temperature,
@@ -205,9 +163,8 @@ export default function App() {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      if (chatSessionRef.current) {
-        setChatHistory(prev => [...prev, { role: 'ai', content: 'Error: ' + (error as Error).message }]);
-      }
+      const message = error instanceof Error ? error.message : '服务暂时不可用，请稍后重试。';
+      setChatHistory(prev => [...prev, { role: 'ai', content: `请求失败：${message}` }]);
     } finally {
       setIsGenerating(false);
     }
@@ -234,7 +191,7 @@ export default function App() {
 
   const navItems = [
     { id: 'settings', label: '设置', icon: Settings },
-    { id: 'model', label: '模型', icon: Box },
+    { id: 'model', label: '目标模型', icon: Box },
     { id: 'parameters', label: '参数', icon: Sliders },
     { id: 'clear', label: '清空', icon: Trash2 },
   ];
@@ -314,7 +271,7 @@ export default function App() {
             {/* Display current selection */}
             <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center pointer-events-none">
               <div className="bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-sm">
-                <span className="text-xs text-white/60">当前模型:</span>
+                <span className="text-xs text-white/60">当前目标模型:</span>
                 <span className="text-sm font-medium text-white">{selectedModel}</span>
               </div>
               <div className="bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-sm">
@@ -327,53 +284,6 @@ export default function App() {
       case 'settings':
         return (
           <div className="space-y-6">
-            {/* API Key Input */}
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-medium text-white/90">
-                <Key className="w-4 h-4 text-white/60" />
-                Gemini API Key
-              </label>
-              <div className="relative">
-                <input
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="输入您的 Gemini API Key..."
-                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="flex items-center gap-2 text-sm font-medium text-white/90">
-                <Key className="w-4 h-4 text-white/60" />
-                DeepSeek API Key
-              </label>
-              <div className="relative">
-                <input
-                  type={showDeepseekApiKey ? "text" : "password"}
-                  value={deepseekApiKey}
-                  onChange={(e) => setDeepseekApiKey(e.target.value)}
-                  placeholder="输入您的 DeepSeek API Key..."
-                  className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 pr-10 text-sm text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowDeepseekApiKey(!showDeepseekApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors"
-                >
-                  {showDeepseekApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
             {/* Theme Selector */}
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-sm font-medium text-white/90">
