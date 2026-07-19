@@ -249,25 +249,50 @@ function normalizeTemperature(temperature: number): number {
  * - 目标任务、受众对象、输入上下文、输出格式、约束条件、评估标准
  * =============================================================================
  */
-function evaluateInformationSufficiency(userMessages: string[]): { score: number; threshold: number; ready: boolean } {
+export const INFORMATION_DIMENSIONS = [
+  'goal',
+  'audience',
+  'context',
+  'output',
+  'constraints',
+  'successCriteria',
+] as const;
+
+export type InformationDimension = typeof INFORMATION_DIMENSIONS[number];
+
+export type InformationAssessment = {
+  dimensions: Record<InformationDimension, boolean>;
+  score: number;
+  threshold: number;
+  criticalMissing: InformationDimension[];
+  ready: boolean;
+  provider: 'gemini' | 'deepseek' | 'heuristic';
+};
+
+export function evaluateInformationSufficiency(userMessages: string[]): InformationAssessment {
   const merged = userMessages.join('\n').toLowerCase();
-  let score = 0;
-
-  const checks = [
-    /(目标|目的|想要|需要|用于|任务|goal|objective)/i, // 目标任务
-    /(受众|读者|用户|客户|面向|audience|persona)/i, // 受众对象
-    /(背景|上下文|输入|数据|资料|素材|参考|context|input)/i, // 输入上下文
-    /(输出|格式|结构|字数|长度|json|markdown|表格|模板|format)/i, // 输出格式
-    /(约束|限制|必须|不要|风格|语气|时间|预算|技术栈|constraints?)/i, // 约束条件
-    /(评估|验收|标准|成功|指标|quality|criteria|kpi)/i, // 评估标准
-  ];
-
-  for (const rule of checks) {
-    if (rule.test(merged)) score += 1;
-  }
+  const hasSubstance = merged.replace(/\s/g, '').length >= 20
+    && new Set(merged.replace(/\s/g, '')).size >= 8;
+  const dimensions: Record<InformationDimension, boolean> = {
+    goal: /(请|帮我|希望|想要|需要|用于|制作|生成|撰写|分析|设计|实现|goal|objective|build|create|write)/i.test(merged),
+    audience: /(受众|读者|用户|客户|面向|年龄|群体|audience|persona|reader|customer)/i.test(merged),
+    context: /(背景|上下文|输入|数据|资料|素材|参考|现状|业务|场景|context|input|source|background)/i.test(merged),
+    output: /(输出|格式|结构|字数|长度|json|markdown|表格|模板|章节|比例|尺寸|format|schema|table)/i.test(merged),
+    constraints: /(约束|限制|必须|不要|避免|风格|语气|时间|预算|技术栈|兼容|constraints?|must|avoid)/i.test(merged),
+    successCriteria: /(评估|验收|标准|成功|指标|准确|完整|可执行|quality|criteria|kpi|acceptance)/i.test(merged),
+  };
+  const score = INFORMATION_DIMENSIONS.filter((dimension) => dimensions[dimension]).length;
 
   const threshold = 4;
-  return { score, threshold, ready: score >= threshold };
+  const criticalMissing: InformationDimension[] = dimensions.goal ? [] : ['goal'];
+  return {
+    dimensions,
+    score,
+    threshold,
+    criticalMissing,
+    ready: hasSubstance && score >= threshold && criticalMissing.length === 0,
+    provider: 'heuristic',
+  };
 }
 
 /**
@@ -1012,6 +1037,7 @@ export function preparePromptRequest(
   temperature: number,
   intensity: number,
   questionDepth: number,
+  assessment?: InformationAssessment,
 ): PreparedPromptRequest {
   const userMessages = messages
     .filter((message) => message.role === 'user')
@@ -1020,7 +1046,7 @@ export function preparePromptRequest(
     .slice(0, -1)
     .filter((message) => message.role === 'assistant' && !/\[STATUS:\s*READY_TO_GENERATE\]/i.test(message.content))
     .length;
-  const readiness = evaluateInformationSufficiency(userMessages);
+  const readiness = assessment || evaluateInformationSufficiency(userMessages);
   const range = getRoundRangeByIntensity(intensity);
   const decision = decideRoundAction(askedRounds, range.min, range.max, readiness);
 
