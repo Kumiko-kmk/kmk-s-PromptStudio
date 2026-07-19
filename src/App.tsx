@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import Iridescence from './components/Iridescence';
 import GlassSurface from './components/GlassSurface';
-import { Send, Settings, Box, Sliders, Trash2, Palette, Copy, Check } from 'lucide-react';
-import { createChatSession } from './services/chatService';
+import { ChatMessage, type ChatHistoryMessage } from './components/ChatMessage';
+import { Send, Settings, Box, Sliders, Trash2, Palette } from 'lucide-react';
+import { createChatSession, type UiOption } from './services/chatService';
 import { ModelType, MODEL_MODES } from './types';
 import { InfiniteMenu, InfiniteMenuItem } from './components/InfiniteMenu';
 import manusImg from './manus.png';
@@ -55,12 +56,15 @@ const themes = [
 export default function App() {
   const [message, setMessage] = useState('');
   const [activePanel, setActivePanel] = useState<string | null>(null);
-  const [copiedIndices, setCopiedIndices] = useState<number[]>([]);
+  const [copiedMessageIds, setCopiedMessageIds] = useState<ReadonlySet<number>>(() => new Set());
 
   // Chat State
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'ai', content: string, ui?: any, selectedOptionId?: string, silent?: boolean }[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryMessage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const chatSessionRef = useRef<any>(null);
+  const chatSessionRef = useRef<ReturnType<typeof createChatSession> | null>(null);
+  const nextMessageIdRef = useRef(1);
+  const activeRequestIdRef = useRef(0);
+  const isGeneratingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
 
@@ -85,31 +89,51 @@ export default function App() {
     }
   };
 
-  const cleanContent = (text: string) => {
-    return text
-      .replace(/\[UI_META\][\s\S]*?(\[\/UI_META\]|$)/gi, '')
-      .replace(/\[\/?FINAL_PROMPT\]/gi, '')
-      .replace(/\[STATUS:\s*READY_TO_GENERATE\]/gi, '')
-      .trim();
-  };
-
   useEffect(() => {
-    if (scrollRef.current && shouldAutoScrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [chatHistory]);
+    if (!shouldAutoScrollRef.current) return;
+    const frameId = requestAnimationFrame(() => {
+      if (scrollRef.current && shouldAutoScrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(frameId);
+  }, [chatHistory, isGenerating]);
 
-  const handleSendMessage = async (customMessage?: string | any, silent = false, source?: string, selection?: any) => {
-    const msgText = typeof customMessage === 'string' ? customMessage : message;
-    if (!msgText || typeof msgText !== 'string' || !msgText.trim() || isGenerating) return;
+  const handleSendMessage = useCallback(async (customMessage?: string, silent = false) => {
+    const msgText = customMessage;
+    if (!msgText || !msgText.trim() || isGeneratingRef.current) return;
 
+    isGeneratingRef.current = true;
+    const requestId = ++activeRequestIdRef.current;
     setMessage('');
     
     // Force auto-scroll when user sends a message
     shouldAutoScrollRef.current = true;
     
-    setChatHistory(prev => [...prev, { role: 'user', content: msgText, silent }]);
+    const userMessageId = nextMessageIdRef.current++;
+    setChatHistory(prev => [...prev, { id: userMessageId, role: 'user', content: msgText, silent }]);
     setIsGenerating(true);
+
+    let pendingText = '';
+    let streamFlushTimerId: number | null = null;
+    let assistantMessageId: number | null = null;
+
+    const flushPendingText = () => {
+      streamFlushTimerId = null;
+      if (activeRequestIdRef.current !== requestId || !pendingText || assistantMessageId === null) return;
+      const text = pendingText;
+      pendingText = '';
+      setChatHistory(prev => prev.map(item => (
+        item.id === assistantMessageId ? { ...item, content: item.content + text } : item
+      )));
+    };
+
+    const scheduleText = (text: string) => {
+      pendingText += text;
+      if (streamFlushTimerId === null) {
+        streamFlushTimerId = window.setTimeout(flushPendingText, 32);
+      }
+    };
 
     try {
       if (!chatSessionRef.current) {
@@ -122,60 +146,71 @@ export default function App() {
         );
       }
 
-      const response = await chatSessionRef.current.sendMessageStream({ 
-        message: msgText,
-        silent,
-        source,
-        selection
-      });
+      const response = await chatSessionRef.current.sendMessageStream({ message: msgText });
       
-      setChatHistory(prev => [...prev, { role: 'ai', content: '' }]);
+      const newAssistantMessageId = nextMessageIdRef.current++;
+      assistantMessageId = newAssistantMessageId;
+      setChatHistory(prev => [...prev, { id: newAssistantMessageId, role: 'ai', content: '' }]);
       
       for await (const chunk of response) {
-        if (!chatSessionRef.current) break;
+        if (activeRequestIdRef.current !== requestId || !chatSessionRef.current) break;
 
         if (chunk.text) {
-          setChatHistory(prev => {
-            if (prev.length === 0) return prev;
-            const newHistory = [...prev];
-            const lastIndex = newHistory.length - 1;
-            if (newHistory[lastIndex].role !== 'ai') return prev;
-            newHistory[lastIndex] = {
-              ...newHistory[lastIndex],
-              content: newHistory[lastIndex].content + chunk.text
-            };
-            return newHistory;
-          });
+          scheduleText(chunk.text);
         }
         if (chunk.ui) {
-          setChatHistory(prev => {
-            if (prev.length === 0) return prev;
-            const newHistory = [...prev];
-            const lastIndex = newHistory.length - 1;
-            if (newHistory[lastIndex].role !== 'ai') return prev;
-            newHistory[lastIndex] = {
-              ...newHistory[lastIndex],
-              ui: { ...newHistory[lastIndex].ui, ...chunk.ui }
-            };
-            return newHistory;
-          });
+          if (streamFlushTimerId !== null) clearTimeout(streamFlushTimerId);
+          flushPendingText();
+          const ui = chunk.ui;
+          setChatHistory(prev => prev.map(item => (
+            item.id === assistantMessageId ? { ...item, ui: { ...item.ui, ...ui } } : item
+          )));
         }
       }
+      if (streamFlushTimerId !== null) clearTimeout(streamFlushTimerId);
+      flushPendingText();
     } catch (error) {
+      if (streamFlushTimerId !== null) clearTimeout(streamFlushTimerId);
+      flushPendingText();
       console.error('Chat error:', error);
-      const message = error instanceof Error ? error.message : '服务暂时不可用，请稍后重试。';
-      setChatHistory(prev => [...prev, { role: 'ai', content: `请求失败：${message}` }]);
+      if (activeRequestIdRef.current === requestId) {
+        const message = error instanceof Error ? error.message : '服务暂时不可用，请稍后重试。';
+        setChatHistory(prev => [...prev, { id: nextMessageIdRef.current++, role: 'ai', content: `请求失败：${message}` }]);
+      }
     } finally {
-      setIsGenerating(false);
+      if (activeRequestIdRef.current === requestId) {
+        isGeneratingRef.current = false;
+        setIsGenerating(false);
+      }
     }
-  };
+  }, [selectedModel, selectedSubModel, temperature, followUpIntensity, detailLevel]);
+
+  const handleCopy = useCallback((messageId: number, text: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopiedMessageIds(prev => {
+      if (prev.has(messageId)) return prev;
+      const next = new Set(prev);
+      next.add(messageId);
+      return next;
+    });
+  }, []);
+
+  const handleOptionSelect = useCallback((messageId: number, option: UiOption) => {
+    setChatHistory(prev => prev.map(item => (
+      item.id === messageId ? { ...item, selectedOptionId: option.id } : item
+    )));
+    void handleSendMessage(option.reply, true);
+  }, [handleSendMessage]);
 
   const handleButtonClick = (panelId: string) => {
     if (panelId === 'clear') {
       setMessage('');
       setChatHistory([]);
-      setCopiedIndices([]);
+      setCopiedMessageIds(new Set());
       chatSessionRef.current = null;
+      activeRequestIdRef.current += 1;
+      isGeneratingRef.current = false;
+      setIsGenerating(false);
       setActivePanel(null);
       return;
     }
@@ -390,95 +425,16 @@ export default function App() {
               工        欲        善        其        事
             </div>
           ) : (
-            chatHistory.map((msg, idx) => {
-              if (msg.silent) return null;
-              
-              return (
-              <div key={idx} className={`flex w-full flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div className="max-w-[80%] flex flex-col gap-2 items-stretch">
-                  <GlassSurface
-                    width="100%"
-                    height="auto"
-                    borderRadius={24}
-                    className="p-5 relative group"
-                  >
-                    {(() => {
-                      const contentText = cleanContent(msg.content);
-                      const shouldAppendFinalPrompt = msg.ui?.finalPrompt && !contentText.includes(msg.ui.finalPrompt.trim());
-                      
-                      return (
-                        <>
-                          <div className={`text-white/90 text-sm leading-relaxed whitespace-pre-wrap ${msg.ui?.finalPrompt ? 'pb-8' : ''}`}>
-                            {contentText}
-                            {shouldAppendFinalPrompt && (
-                              <>
-                                {contentText.trim() ? '\n\n' : ''}
-                                {msg.ui.finalPrompt}
-                              </>
-                            )}
-                          </div>
-                          {msg.role === 'ai' && msg.ui?.finalPrompt && (
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(msg.ui!.finalPrompt!);
-                                setCopiedIndices(prev => prev.includes(idx) ? prev : [...prev, idx]);
-                              }}
-                              className="absolute bottom-3 right-3 p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white/50 hover:text-white transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                            >
-                              {copiedIndices.includes(idx) ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                            </button>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </GlassSurface>
-
-                {/* Render options if they exist and it's an AI message */}
-                {msg.role === 'ai' && msg.ui?.options && msg.ui.options.length > 0 && (
-                  <div className="flex flex-row gap-2 w-full">
-                    {msg.ui.options.map((opt: any) => {
-                      const isSelected = msg.selectedOptionId === opt.id;
-                      const hasSelection = !!msg.selectedOptionId;
-                      
-                      return (
-                        <button
-                          key={opt.id}
-                          disabled={hasSelection || isGenerating}
-                          onClick={() => {
-                            // Mark this option as selected
-                            setChatHistory(prev => {
-                              const newHistory = [...prev];
-                              newHistory[idx] = { ...newHistory[idx], selectedOptionId: opt.id };
-                              return newHistory;
-                            });
-                            // Send the reply silently
-                            handleSendMessage(opt.reply, true, 'option_button', { id: opt.id, label: opt.label });
-                          }}
-                          className={`flex-1 text-center transition-all duration-300 ${hasSelection && !isSelected ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
-                        >
-                          <GlassSurface
-                            width="100%"
-                            height="auto"
-                            borderRadius={16}
-                            className={`py-2.5 px-4 transition-colors duration-300 ${isSelected ? 'bg-white/20 border-white/50 shadow-[0_0_15px_rgba(255,255,255,0.15)]' : 'hover:bg-white/10'}`}
-                          >
-                            <div className="flex items-center justify-center w-full h-full">
-                              <span className={`
-                                font-bold text-sm transition-colors
-                                ${isSelected ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-white/80'}
-                              `}>
-                                {isSelected ? '✓' : opt.id}
-                              </span>
-                            </div>
-                          </GlassSurface>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                </div>
-              </div>
-            )})
+            chatHistory.map((chatMessage) => chatMessage.silent ? null : (
+              <ChatMessage
+                key={chatMessage.id}
+                message={chatMessage}
+                copied={copiedMessageIds.has(chatMessage.id)}
+                optionsDisabled={Boolean(chatMessage.ui?.options?.length && isGenerating)}
+                onCopy={handleCopy}
+                onOptionSelect={handleOptionSelect}
+              />
+            ))
           )}
           {isGenerating && chatHistory[chatHistory.length - 1]?.role === 'user' && (
             <div className="flex w-full justify-start">
@@ -516,13 +472,13 @@ export default function App() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSendMessage();
+                if (e.key === 'Enter') handleSendMessage(e.currentTarget.value);
               }}
               placeholder="Type your idea..."
               className="flex-1 h-full bg-transparent border-none outline-none text-white placeholder:text-white/50 px-4 text-lg"
             />
             <button 
-              onClick={() => handleSendMessage()}
+              onClick={() => handleSendMessage(message)}
               disabled={isGenerating || !message.trim()}
               className={`flex items-center justify-center w-10 h-10 rounded-full transition-colors text-white ${isGenerating || !message.trim() ? 'bg-white/5 text-white/30 cursor-not-allowed' : 'bg-white/10 hover:bg-white/20'}`}
             >

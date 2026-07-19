@@ -145,21 +145,30 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
 
   useEffect(() => {
     if (!containerRef.current) return;
+    let frameId: number | null = null;
+    let lastWidth = 0;
+    let lastHeight = 0;
 
-    const resizeObserver = new ResizeObserver(() => {
-      setTimeout(updateDisplacementMap, 0);
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      if (width === lastWidth && height === lastHeight) return;
+      lastWidth = width;
+      lastHeight = height;
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        frameId = null;
+        updateDisplacementMap();
+      });
     });
 
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
     };
   }, []);
-
-  useEffect(() => {
-    setTimeout(updateDisplacementMap, 0);
-  }, [width, height]);
 
   useEffect(() => {
     setSvgSupported(supportsSVGFilters());
