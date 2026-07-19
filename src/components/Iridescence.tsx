@@ -74,6 +74,7 @@ export default function Iridescence({
     const renderer = new Renderer();
     const gl = renderer.gl;
     gl.clearColor(1, 1, 1, 1);
+    let bounds = ctn.getBoundingClientRect();
 
     let program: Program;
 
@@ -81,6 +82,7 @@ export default function Iridescence({
       if (!ctn) return;
       const scale = window.devicePixelRatio || 1;
       renderer.setSize(ctn.offsetWidth * scale, ctn.offsetHeight * scale);
+      bounds = ctn.getBoundingClientRect();
       gl.canvas.style.width = '100%';
       gl.canvas.style.height = '100%';
       if (program) {
@@ -111,34 +113,52 @@ export default function Iridescence({
     programRef.current = program;
 
     const mesh = new Mesh(gl, { geometry, program });
-    let animateId: number;
+    let animateId: number | null = null;
 
     function update(t: number) {
-      animateId = requestAnimationFrame(update);
+      animateId = null;
       program.uniforms.uTime.value = t * 0.001;
       renderer.render({ scene: mesh });
+      if (!document.hidden) animateId = requestAnimationFrame(update);
     }
-    animateId = requestAnimationFrame(update);
+
+    function startAnimation() {
+      if (animateId === null && !document.hidden) {
+        animateId = requestAnimationFrame(update);
+      }
+    }
+
+    function stopAnimation() {
+      if (animateId !== null) cancelAnimationFrame(animateId);
+      animateId = null;
+    }
+
+    function handleVisibilityChange() {
+      if (document.hidden) stopAnimation();
+      else startAnimation();
+    }
+    startAnimation();
     ctn.appendChild(gl.canvas);
     resize();
 
     function handleMouseMove(e: MouseEvent) {
       if (!mouseReactRef.current || !ctn) return;
-      const rect = ctn.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width;
-      const y = 1.0 - (e.clientY - rect.top) / rect.height;
+      const x = (e.clientX - bounds.left) / bounds.width;
+      const y = 1.0 - (e.clientY - bounds.top) / bounds.height;
       mousePos.current = { x, y };
       if (programRef.current) {
         programRef.current.uniforms.uMouse.value[0] = x;
         programRef.current.uniforms.uMouse.value[1] = y;
       }
     }
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      cancelAnimationFrame(animateId);
+      stopAnimation();
       window.removeEventListener('resize', resize);
       window.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       ctn.removeChild(gl.canvas);
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     };
