@@ -183,7 +183,8 @@ async function requestGeminiAssessment(apiKey: string, request: ChatRequest): Pr
     contents: buildAssessmentPrompt(request),
     config: {
       temperature: 0,
-      maxOutputTokens: 300,
+      maxOutputTokens: 1_024,
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
