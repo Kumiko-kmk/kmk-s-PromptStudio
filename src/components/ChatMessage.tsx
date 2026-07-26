@@ -75,6 +75,7 @@ function ChatMessageView({
           width="100%"
           height="auto"
           borderRadius={24}
+          variant="frosted"
           className="p-5 relative group"
         >
           <div className={`text-white/90 text-sm leading-relaxed whitespace-pre-wrap ${finalPrompt ? 'pb-8' : ''}`}>

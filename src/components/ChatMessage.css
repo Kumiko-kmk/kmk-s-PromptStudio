@@ -2,3 +2,8 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+
+.chat-message-row--offscreen .glass-surface--frosted::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}

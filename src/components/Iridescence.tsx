@@ -1,5 +1,5 @@
 import { Renderer, Program, Mesh, Color, Triangle } from 'ogl';
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import './Iridescence.css';
 
 const vertexShader = `
@@ -52,7 +52,7 @@ export interface IridescenceProps extends React.HTMLAttributes<HTMLDivElement> {
   mouseReact?: boolean;
 }
 
-export default function Iridescence({
+function Iridescence({
   color = [1, 1, 1],
   speed = 1.0,
   amplitude = 0.1,
@@ -175,3 +175,5 @@ export default function Iridescence({
 
   return <div ref={ctnDom} className="iridescence-container" {...rest} />;
 }
+
+export default memo(Iridescence);

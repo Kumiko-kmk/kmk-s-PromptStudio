@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { memo, useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export interface InfiniteMenuItem {
@@ -16,6 +16,7 @@ interface InfiniteMenuProps {
   itemRadius?: number;
   gap?: number;
   className?: string;
+  active?: boolean;
 }
 
 type NodeType = 'A' | 'B';
@@ -156,13 +157,14 @@ const PieSlice: React.FC<PieSliceProps> = ({
   );
 };
 
-export const InfiniteMenu: React.FC<InfiniteMenuProps> = ({
+export const InfiniteMenu = memo(function InfiniteMenu({
   items,
   onSelect,
   itemRadius = 40,
   gap = 12,
   className = '',
-}) => {
+  active = true,
+}: InfiniteMenuProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // 摄像机/视野状态
@@ -248,25 +250,28 @@ export const InfiniteMenu: React.FC<InfiniteMenuProps> = ({
 
   // 动画循环：处理惯性拖动
   useEffect(() => {
+    const hasVelocity = Math.abs(velocityRef.current.x) > 0.1 || Math.abs(velocityRef.current.y) > 0.1;
+    if (!active || isPanning || confirmedNode || !hasVelocity) return;
+    lastTimeRef.current = performance.now();
+
     const animate = (time: number) => {
       const dt = time - lastTimeRef.current;
       lastTimeRef.current = time;
 
-      if (!isPanning && !confirmedNode && (Math.abs(velocityRef.current.x) > 0.1 || Math.abs(velocityRef.current.y) > 0.1)) {
+      if (Math.abs(velocityRef.current.x) > 0.1 || Math.abs(velocityRef.current.y) > 0.1) {
         setCamera(prev => ({
           x: prev.x - velocityRef.current.x * (dt / 16),
           y: prev.y - velocityRef.current.y * (dt / 16)
         }));
         velocityRef.current.x *= 0.92;
         velocityRef.current.y *= 0.92;
+        requestRef.current = requestAnimationFrame(animate);
       }
-
-      requestRef.current = requestAnimationFrame(animate);
     };
 
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [isPanning, confirmedNode]);
+  }, [active, isPanning, confirmedNode]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (confirmedNode) {
@@ -505,4 +510,4 @@ export const InfiniteMenu: React.FC<InfiniteMenuProps> = ({
       </motion.div>
     </div>
   );
-};
+});

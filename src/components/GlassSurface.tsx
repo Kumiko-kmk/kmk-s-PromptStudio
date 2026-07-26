@@ -40,6 +40,7 @@ export interface GlassSurfaceProps {
     | 'plus-lighter';
   className?: string;
   style?: React.CSSProperties;
+  variant?: 'liquid' | 'frosted';
 }
 
 const GlassSurface: React.FC<GlassSurfaceProps> = ({
@@ -62,7 +63,8 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
   yChannel = 'G',
   mixBlendMode = 'difference',
   className = '',
-  style = {}
+  style = {},
+  variant = 'liquid'
 }) => {
   const id = useId();
   const filterId = `glass-filter-${id.replace(/:/g, '')}`;
@@ -111,6 +113,7 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
   };
 
   useEffect(() => {
+    if (variant !== 'liquid') return;
     updateDisplacementMap();
     [
       { ref: redChannelRef, offset: redOffset },
@@ -140,10 +143,12 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
     blueOffset,
     xChannel,
     yChannel,
-    mixBlendMode
+    mixBlendMode,
+    variant
   ]);
 
   useEffect(() => {
+    if (variant !== 'liquid') return;
     if (!containerRef.current) return;
     let frameId: number | null = null;
     let lastWidth = 0;
@@ -168,11 +173,12 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
       if (frameId !== null) cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
     };
-  }, []);
+  }, [variant]);
 
   useEffect(() => {
+    if (variant !== 'liquid') return;
     setSvgSupported(supportsSVGFilters());
-  }, []);
+  }, [variant]);
 
   const supportsSVGFilters = () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -203,13 +209,17 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
     '--border-radius-val': `${borderRadius}px`
   } as React.CSSProperties;
 
+  const surfaceVariantClass = variant === 'frosted'
+    ? 'glass-surface--frosted'
+    : svgSupported ? 'glass-surface--svg' : 'glass-surface--fallback';
+
   return (
     <div
       ref={containerRef}
-      className={`glass-surface ${svgSupported ? 'glass-surface--svg' : 'glass-surface--fallback'} ${className}`}
+      className={`glass-surface ${surfaceVariantClass} ${className}`}
       style={containerStyle}
     >
-      <svg className="glass-surface__filter" xmlns="http://www.w3.org/2000/svg">
+      {variant === 'liquid' && <svg className="glass-surface__filter" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <filter id={filterId} colorInterpolationFilters="sRGB" x="0%" y="0%" width="100%" height="100%">
             <feImage ref={feImageRef} x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map" />
@@ -258,7 +268,7 @@ const GlassSurface: React.FC<GlassSurfaceProps> = ({
             <feGaussianBlur ref={gaussianBlurRef} in="output" stdDeviation="0.7" />
           </filter>
         </defs>
-      </svg>
+      </svg>}
 
       <div className="glass-surface__content">{children}</div>
     </div>

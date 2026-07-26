@@ -5,7 +5,7 @@ import { ChatMessage, type ChatHistoryMessage } from './components/ChatMessage';
 import { Send, Settings, Box, Sliders, Trash2, Palette } from 'lucide-react';
 import { createChatSession, type UiOption } from './services/chatService';
 import { ModelType, MODEL_MODES } from './types';
-import { InfiniteMenu, InfiniteMenuItem } from './components/InfiniteMenu';
+import { InfiniteMenu, type InfiniteMenuItem } from './components/InfiniteMenu';
 import manusImg from './manus.png';
 import grokImg from './gork.png';
 import geminiImg from './gemini.jpg';
@@ -202,6 +202,11 @@ export default function App() {
     void handleSendMessage(option.reply, true);
   }, [handleSendMessage]);
 
+  const handleModelSelect = useCallback((item: InfiniteMenuItem, subOption?: string) => {
+    setSelectedModel(item.id as ModelType);
+    if (subOption) setSelectedSubModel(subOption);
+  }, []);
+
   const handleButtonClick = (panelId: string) => {
     if (panelId === 'clear') {
       setMessage('');
@@ -296,12 +301,8 @@ export default function App() {
           <div className="w-full h-[320px] relative">
             <InfiniteMenu 
               items={infiniteMenuItems}
-              onSelect={(item, subOption) => {
-                setSelectedModel(item.id as ModelType);
-                if (subOption) {
-                  setSelectedSubModel(subOption);
-                }
-              }}
+              onSelect={handleModelSelect}
+              active={activePanel === 'model' && chatHistory.length === 0}
             />
             {/* Display current selection */}
             <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center pointer-events-none">
@@ -390,7 +391,7 @@ export default function App() {
               </button>
 
               {/* Dropdown Panel */}
-              {item.id !== 'clear' && (
+              {item.id !== 'clear' && chatHistory.length === 0 && (
                 <div 
                   className={`absolute top-full left-0 mt-4 w-full bg-white/10 backdrop-blur-2xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden transition-all duration-400 ease-out origin-top ${
                     activePanel === item.id 
@@ -443,6 +444,7 @@ export default function App() {
                   width="auto"
                   height="auto"
                   borderRadius={24}
+                  variant="frosted"
                   className="p-5"
                 >
                   <div className="text-white/60 text-sm flex items-center gap-2">
